@@ -169,7 +169,7 @@ typedef void ( *FnCommandCallbackVoid_t )();
 //-----------------------------------------------------------------------------
 // Returns 0 to COMMAND_COMPLETION_MAXITEMS worth of completion strings
 //-----------------------------------------------------------------------------
-typedef int(*FnCommandCompletionCallback)( const char *partial, CUtlVector< CUtlString > &commands );
+typedef int(*FnCommandCompletionCallback)( const CCommand &command, CUtlVector< CUtlString > &completions );
 
 
 //-----------------------------------------------------------------------------
@@ -184,7 +184,7 @@ public:
 class ICommandCompletionCallback
 {
 public:
-	virtual int  CommandCompletionCallback( const char *pPartial, CUtlVector< CUtlString > &commands ) = 0;
+	virtual int  CommandCompletionCallback( const CCommand &command, CUtlVector< CUtlString > &completions ) = 0;
 };
 
 //-----------------------------------------------------------------------------
@@ -823,11 +823,11 @@ void ConVar_PrintDescription( const CVarCreationBase_t* pVar );
 #endif
 
 template< class T >
-class CConCommandMemberAccessor : public ConCommand, public ICommandCallback, public ICommandCompletionCallback
+class CConCommandMemberAccessor : public ICommandCallback, public ICommandCompletionCallback, public ConCommand
 {
 	typedef ConCommand BaseClass;
 	typedef void ( T::*FnMemberCommandCallback_t )( const CCommandContext &context, const CCommand &command );
-	typedef int  ( T::*FnMemberCommandCompletionCallback_t )( const char *pPartial, CUtlVector< CUtlString > &commands );
+	typedef int  ( T::*FnMemberCommandCompletionCallback_t )( const CCommand &command, CUtlVector< CUtlString > &completions );
 
 public:
 	CConCommandMemberAccessor( T* pOwner, const char *pName, FnMemberCommandCallback_t callback, const char *pHelpString = 0,
@@ -849,16 +849,16 @@ public:
 		m_pOwner = pOwner;
 	}
 
-	virtual void CommandCallback( const CCommandContext &context, const CCommand &command )
+	virtual void CommandCallback( const CCommandContext &context, const CCommand &command ) override
 	{
 		Assert( m_pOwner && m_Func );
 		(m_pOwner->*m_Func)( context, command );
 	}
 
-	virtual int  CommandCompletionCallback( const char *pPartial, CUtlVector< CUtlString > &commands )
+	virtual int  CommandCompletionCallback( const CCommand &command, CUtlVector< CUtlString > &completions ) override
 	{
 		Assert( m_pOwner && m_CompletionFunc );
-		return (m_pOwner->*m_CompletionFunc)( pPartial, commands );
+		return (m_pOwner->*m_CompletionFunc)( command, completions );
 	}
 
 private:

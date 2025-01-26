@@ -380,7 +380,7 @@ int CCommand::FindArgInt( const char *pName, int nDefaultVal ) const
 //-----------------------------------------------------------------------------
 // Default console command autocompletion function 
 //-----------------------------------------------------------------------------
-int DefaultCompletionFunc( const char *partial, CUtlVector< CUtlString > &commands )
+int DefaultCompletionFunc( const CCommand &command, CUtlVector< CUtlString > &completions )
 {
 	return 0;
 }
