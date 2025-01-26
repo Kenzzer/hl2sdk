@@ -21,7 +21,7 @@
 #include "tier1/utlstring.h"
 #include "tier1/characterset.h"
 #include "Color.h"
-#include "cvar.h"
+#include "icvar.h"
 #include "playerslot.h"
 
 #include <cstdint>
@@ -362,9 +362,10 @@ struct ConVarCreation_t : CVarCreationBase_t {
 	struct ConVarValueInfo_t
 	{
 		ConVarValueInfo_t() :
-		m_bHasDefault(false),
-		m_bHasMin(false),
-		m_bHasMax(false)
+			m_Version(0),
+			m_bHasDefault(false),
+			m_bHasMin(false),
+			m_bHasMax(false)
 		{}
 
 		template<typename T>
@@ -374,7 +375,7 @@ struct ConVarCreation_t : CVarCreationBase_t {
 		template<typename T>
 		T& MaxValue()		{ return *reinterpret_cast<T*>(m_maxValue); }
 
-		int32_t m_unknown1; // 0x18
+		int32_t m_Version; // 0x18
 
 		bool m_bHasDefault; // 0x22
 		bool m_bHasMin; // 0x23

@@ -232,7 +232,12 @@ public:
 		m_minValue(nullptr),
 		m_maxValue(nullptr),
 		m_pszHelpString("This convar is being accessed prior to ConVar_Register being called"),
-		m_eVarType(EConVarType_Invalid)
+		m_eVarType(EConVarType_Invalid),
+		m_Version(0),
+		m_iTimesChanged(0),
+		m_nFlags(0),
+		m_iCallbackIndex(0),
+		m_GameInfoFlags(0)
 	{
 	}
 
@@ -268,20 +273,28 @@ protected:
 	const char* m_pszHelpString;
 	EConVarType m_eVarType;
 
-	// This gets copied from the ConVarDesc_t on creation
-	short unk1;
+	// Might be set by a gameinfo config via "version" key
+	short m_Version;
 
 	unsigned int m_iTimesChanged;
 	int64 m_nFlags;
 	unsigned int m_iCallbackIndex;
 
-	// Used when setting default, max, min values from the ConVarDesc_t
-	// although that's not the only place of usage
-	// flags seems to be:
-	// (1 << 0) Skip setting value to split screen slots and also something keyvalues related
-	// (1 << 1) Skip setting default value
-	// (1 << 2) Skip setting min/max values
-	int m_nUnknownAllocFlags;
+	enum
+	{
+		// GameInfo was used to initialize this cvar
+		CVARGI_INITIALIZED = (1 << 0),
+		// GameInfo has set default value, and it cannot be overriden
+		CVARGI_HAS_DEFAULT_VALUE = (1 << 1),
+		// GameInfo has set min value, and it cannot be overriden
+		CVARGI_HAS_MIN_VALUE = (1 << 2),
+		// GameInfo has set max value, and it cannot be overriden
+		CVARGI_HAS_MAX_VALUE = (1 << 3),
+		// GameInfo has set cvar version
+		CVARGI_HAS_VERSION = (1 << 4)
+	};
+
+	int m_GameInfoFlags;
 };
 
 template<> inline void CConVarBaseData::ValueToString<bool>( const bool& val, char* dst, size_t length )
@@ -460,7 +473,7 @@ public:
 	virtual ConVarHandle	FindNextConVar( ConVarHandle prev ) = 0;
 	virtual void			CallChangeCallback( ConVarHandle cvarid, const CSplitScreenSlot nSlot, const CVValue_t* pNewValue, const CVValue_t* pOldValue ) = 0;
 
-	virtual ConCommandHandle	FindCommand( const char *name ) = 0;
+	virtual ConCommandHandle	FindCommand( const char *name, bool bAllowDeveloper = false ) = 0;
 	virtual ConCommandHandle	FindFirstCommand() = 0;
 	virtual ConCommandHandle	FindNextCommand( ConCommandHandle prev ) = 0;
 	virtual void				DispatchConCommand( ConCommandHandle cmd, const CCommandContext &ctx, const CCommand &args ) = 0;
@@ -470,7 +483,7 @@ public:
 	virtual void			RemoveGlobalChangeCallback( FnChangeCallbackGlobal_t callback ) = 0;
 	virtual void			CallGlobalChangeCallbacks( BaseConVar* ref, CSplitScreenSlot nSlot, const char* newValue, const char* oldValue ) = 0;
 	// Reverts cvars which contain a specific flag
-	virtual void			RevertFlaggedConVars( int nFlag ) = 0;
+	virtual void			RevertFlaggedConVars( uint64 nFlag ) = 0;
 
 	virtual void			SetMaxSplitScreenSlots( int nSlots ) = 0;
 	virtual int				GetMaxSplitScreenSlots() const = 0;
