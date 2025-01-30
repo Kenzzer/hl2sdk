@@ -233,7 +233,7 @@ public:
 		m_maxValue(nullptr),
 		m_pszHelpString("This convar is being accessed prior to ConVar_Register being called"),
 		m_eVarType(EConVarType_Invalid),
-		m_Version(0),
+		m_Version(-1),
 		m_iTimesChanged(0),
 		m_nFlags(0),
 		m_iCallbackIndex(0),
@@ -502,7 +502,9 @@ public:
 	virtual characterset_t	*GetCharacterSet( void ) = 0;
 	virtual void			SetConVarsFromGameInfo( KeyValues *pKV ) = 0;
 
-	virtual void	unk2() = 0;
+	// Removes FCVAR_DEVELOPMENTONLY | FCVAR_DEFENSIVE from all cvars and concommands
+	// that have FCVAR_DEFENSIVE set
+	virtual void			StripDevelopmentFlags() = 0;
 
 	// Register, unregister vars
 	virtual void		RegisterConVar( const ConVarCreation_t& setup, int64 nAdditionalFlags, ConVarHandle* pCvarRef, CConVarBaseData** pCvar ) = 0;
