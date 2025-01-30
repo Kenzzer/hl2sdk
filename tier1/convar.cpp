@@ -196,38 +196,19 @@ void ConVar_Unregister( )
 	s_bRegistered = false;
 }
 
-//-----------------------------------------------------------------------------
-// Global methods
-//-----------------------------------------------------------------------------
-static characterset_t s_BreakSet;
-static bool s_bBuiltBreakSet = false;
-
 
 //-----------------------------------------------------------------------------
 // Tokenizer class
 //-----------------------------------------------------------------------------
 CCommand::CCommand()
 {
-	if ( !s_bBuiltBreakSet )
-	{
-		s_bBuiltBreakSet = true;
-		CharacterSetBuild( &s_BreakSet, "{}()':" );
-	}
-
+	EnsureBuffers();
 	Reset();
 }
 
-CCommand::CCommand( int nArgC, const char **ppArgV )
+CCommand::CCommand( int nArgC, const char **ppArgV ) : CCommand()
 {
 	Assert( nArgC > 0 );
-
-	if ( !s_bBuiltBreakSet )
-	{
-		s_bBuiltBreakSet = true;
-		CharacterSetBuild( &s_BreakSet, "{}()':" );
-	}
-
-	Reset();
 
 	char *pBuf = m_ArgvBuffer.Base();
 	char *pSBuf = m_ArgSBuffer.Base();
@@ -261,50 +242,59 @@ CCommand::CCommand( int nArgC, const char **ppArgV )
 	}
 }
 
+void CCommand::EnsureBuffers()
+{
+	m_ArgSBuffer.SetSize( MaxCommandLength() );
+	m_ArgvBuffer.SetSize( MaxCommandLength() );
+}
+
 void CCommand::Reset()
 {
 	m_nArgv0Size = 0;
-	m_ArgSBuffer.RemoveAll();
-	m_ArgvBuffer.RemoveAll();
+	m_ArgSBuffer.Base()[0] = '\0';
 	m_Args.RemoveAll();
 }
 
 characterset_t* CCommand::DefaultBreakSet()
 {
-	return &s_BreakSet;
+	return g_pCVar->GetCharacterSet();
 }
 
-bool CCommand::Tokenize( const char *pCommand, characterset_t *pBreakSet )
+bool CCommand::Tokenize( CUtlString pCommand, characterset_t *pBreakSet )
 {
+	if(m_ArgSBuffer.Count() == 0)
+		EnsureBuffers();
+
 	Reset();
-	if ( !pCommand )
+
+	if ( pCommand.IsEmpty() )
 		return false;
 
 	// Use default break set
 	if ( !pBreakSet )
 	{
-		pBreakSet = &s_BreakSet;
+		pBreakSet = DefaultBreakSet();
 	}
 
 	// Copy the current command into a temp buffer
 	// NOTE: This is here to avoid the pointers returned by DequeueNextCommand
 	// to become invalid by calling AddText. Is there a way we can avoid the memcpy?
-	int nLen = V_strlen( pCommand );
-	if ( nLen >= COMMAND_MAX_LENGTH - 1 )
+	int nLen = pCommand.Length();
+	if ( nLen >= m_ArgSBuffer.Count() - 1 )
 	{
 		Warning( "CCommand::Tokenize: Encountered command which overflows the tokenizer buffer.. Skipping!\n" );
 		return false;
 	}
 
-	memcpy( m_ArgSBuffer.Base(), pCommand, nLen + 1 );
+	memmove( m_ArgSBuffer.Base(), pCommand, nLen + 1 );
 
 	// Parse the current command into the current command buffer
 	CUtlBuffer bufParse( m_ArgSBuffer.Base(), nLen, CUtlBuffer::TEXT_BUFFER | CUtlBuffer::READ_ONLY);
 	int nArgvBufferSize = 0;
-	while ( bufParse.IsValid() && ( m_Args.Count() < COMMAND_MAX_ARGC ) )
+	while ( bufParse.IsValid() )
 	{
 		char *pArgvBuf = &m_ArgvBuffer[nArgvBufferSize];
-		int nMaxLen = COMMAND_MAX_LENGTH - nArgvBufferSize;
+		int nMaxLen = m_ArgvBuffer.Count() - nArgvBufferSize;
 		int nStartGet = bufParse.TellGet();
 		int	nSize = bufParse.ParseToken( pBreakSet, pArgvBuf, nMaxLen );
 		if ( nSize < 0 )
@@ -340,13 +330,10 @@ bool CCommand::Tokenize( const char *pCommand, characterset_t *pBreakSet )
 		}
 
 		m_Args.AddToTail( pArgvBuf );
-		if( m_Args.Count() >= COMMAND_MAX_ARGC )
-		{
-			Warning( "CCommand::Tokenize: Encountered command which overflows the argument buffer.. Clamped!\n" );
-		}
-
 		nArgvBufferSize += nSize + 1;
-		Assert( nArgvBufferSize <= COMMAND_MAX_LENGTH );
+		
+		if(nArgvBufferSize >= m_ArgvBuffer.Count())
+			break;
 	}
 
 	return true;

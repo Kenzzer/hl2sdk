@@ -195,7 +195,7 @@ class CCommand
 public:
 	CCommand();
 	CCommand( int nArgC, const char **ppArgV );
-	bool Tokenize( const char *pCommand, characterset_t *pBreakSet = NULL );
+	bool Tokenize( CUtlString pCommand, characterset_t *pBreakSet = nullptr );
 	void Reset();
 
 	int ArgC() const;
@@ -216,6 +216,8 @@ public:
 	static characterset_t* DefaultBreakSet();
 
 private:
+	void EnsureBuffers();
+
 	enum
 	{
 		COMMAND_MAX_ARGC = 64,

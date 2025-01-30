@@ -499,7 +499,7 @@ public:
 	virtual void				ResetConVarsToSnapshot( ConVarSnapshot_t *pSnapshot ) = 0;
 	virtual void				DestroyConVarSnapshot( ConVarSnapshot_t *pSnaoshot ) = 0;
 
-	virtual characterset_t	GetCharacterSet( void ) = 0;
+	virtual characterset_t	*GetCharacterSet( void ) = 0;
 	virtual void			SetConVarsFromGameInfo( KeyValues *pKV ) = 0;
 
 	virtual void	unk2() = 0;
