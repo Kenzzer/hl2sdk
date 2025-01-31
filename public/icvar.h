@@ -131,31 +131,6 @@ private:
 
 static const ConVarHandle INVALID_CONVAR_HANDLE = ConVarHandle();
 
-class ConCommandHandle
-{
-public:
-	ConCommandHandle( uint16_t index = -1, uint32_t handle = -1) :
-	m_concommandIndex(index),
-	m_handleIndex(handle)
-	{}
-
-	bool IsValid( ) const { return m_concommandIndex != 0xFFFF; }
-	void Invalidate( )
-	{
-		m_concommandIndex = 0xFFFF;
-		m_handleIndex = 0x0;
-	}
-
-	uint32_t GetConCommandIndex() const { return m_concommandIndex; }
-	uint32_t GetIndex() const { return m_handleIndex; }
-
-private:
-	uint32_t m_concommandIndex;
-	uint32_t m_handleIndex;
-};
-
-static const ConCommandHandle INVALID_CONCOMMAND_HANDLE = ConCommandHandle();
-
 //-----------------------------------------------------------------------------
 // Purpose: Internal structure of ConVar objects
 //-----------------------------------------------------------------------------
@@ -473,10 +448,10 @@ public:
 	virtual ConVarHandle	FindNextConVar( ConVarHandle prev ) = 0;
 	virtual void			CallChangeCallback( ConVarHandle cvarid, const CSplitScreenSlot nSlot, const CVValue_t* pNewValue, const CVValue_t* pOldValue ) = 0;
 
-	virtual ConCommandHandle	FindCommand( const char *name, bool bAllowDeveloper = false ) = 0;
-	virtual ConCommandHandle	FindFirstCommand() = 0;
-	virtual ConCommandHandle	FindNextCommand( ConCommandHandle prev ) = 0;
-	virtual void				DispatchConCommand( ConCommandHandle cmd, const CCommandContext &ctx, const CCommand &args ) = 0;
+	virtual ConCommandRef	FindCommand( const char *name, bool bAllowDeveloper = false ) = 0;
+	virtual ConCommandRef	FindFirstCommand() = 0;
+	virtual ConCommandRef	FindNextCommand( ConCommandRef prev ) = 0;
+	virtual void			DispatchConCommand( ConCommandRef cmd, const CCommandContext &ctx, const CCommand &args ) = 0;
 
 	// Install a global change callback (to be called when any convar changes) 
 	virtual void			InstallGlobalChangeCallback( FnChangeCallbackGlobal_t callback ) = 0;
@@ -512,9 +487,12 @@ public:
 	virtual CConVarBaseData*	GetConVar( ConVarHandle handle ) = 0;
 
 	// Register, unregister commands
-	virtual ConCommandHandle	RegisterConCommand( const ConCommandCreation_t& setup, int64 nAdditionalFlags = 0 ) = 0;
-	virtual void				UnregisterConCommand( ConCommandHandle handle ) = 0;
-	virtual ConCommand*			GetCommand( ConCommandHandle handle ) = 0;
+	virtual ConCommand			RegisterConCommand( const ConCommandCreation_t& setup, int64 nAdditionalFlags = 0 ) = 0;
+	// Unregisters concommand callbacks, but leaves the command in the lists,
+	// so all ConCommandRefs would still be valid as well as searching for it
+	virtual void				UnregisterConCommand( ConCommand cmd ) = 0;
+	// Returns command info or empty <unknown> command struct if not found, never nullptr
+	virtual ConCommandData*		GetCommand( ConCommandRef cmd ) = 0;
 
 	virtual void QueueThreadSetValue( BaseConVar* ref, CSplitScreenSlot nSlot, CVValue_t* value ) = 0;
 };

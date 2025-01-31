@@ -26,6 +26,9 @@
 #endif
 #include "tier0/memdbgon.h"
 
+// AMNOTE: Define this if you need cvars/concommands to respect flags sanitization rules
+// #define SANITIZE_CVAR_FLAGS 1
+
 //-----------------------------------------------------------------------------
 // Statically constructed list of ConCommandBases, 
 // used for registering them with the ICVar interface
@@ -33,33 +36,23 @@
 static int64 s_nCVarFlag = 0;
 static bool s_bRegistered = false;
 
-void RegisterCommand( ConCommandCreation_t& cmd )
-{
-	*cmd.m_pHandle = g_pCVar->RegisterConCommand( cmd, s_nCVarFlag );
-	if ( !cmd.m_pHandle->IsValid() )
-	{
-		Plat_FatalErrorFunc( "RegisterConCommand: Unknown error registering con command \"%s\"!\n", cmd.m_pszName );
-		DebuggerBreakIfDebugging( );
-	}
-}
-
-void UnRegisterCommand( ConCommandHandle& cmd )
-{
-	if ( cmd.IsValid() )
-	{
-		g_pCVar->UnregisterConCommand( cmd );
-
-		cmd.Invalidate();
-	}
-}
-
 class ConCommandRegList
 {
 public:
-	static ConCommandRegList* GetRegList()
+	struct ConCommandCreationEntry_t
 	{
-		static ConCommandRegList* list = new ConCommandRegList();
-		return list;
+		ConCommandCreation_t m_Info;
+		ConCommand *m_Command = nullptr;
+	};
+
+	static void RegisterCommand( ConCommandCreationEntry_t &cmd )
+	{
+		*cmd.m_Command = g_pCVar->RegisterConCommand( cmd.m_Info, s_nCVarFlag );
+		if(!cmd.m_Command->IsValid())
+		{
+			Plat_FatalErrorFunc( "RegisterConCommand: Unknown error registering con command \"%s\"!\n", cmd.m_Info.m_pszName );
+			DebuggerBreakIfDebugging();
+		}
 	}
 
 	static void RegisterAll()
@@ -68,37 +61,72 @@ public:
 		{
 			s_bConCommandsRegistered = true;
 
-			ConCommandRegList* list = GetRegList();
-			FOR_EACH_VEC( list->m_Vec, i )
+			ConCommandRegList *prev = nullptr;
+			for(auto list = s_pRoot; list; list = prev)
 			{
-				RegisterCommand( list->m_Vec[i] );
-			}
-			delete list;
+				for(int i = 0; i < list->m_nSize; i++)
+				{
+					RegisterCommand( list->m_Entries[i] );
+				}
+
+				prev = list->m_pPrev;
+				delete list;
+			};
 		}
 	}
-private:
-	friend void AddCommand( ConCommandCreation_t& cmd );
 
-	void Add( const ConCommandCreation_t& cmd )
+	static void AddToList( const ConCommandCreationEntry_t &cmd )
 	{
-		m_Vec.AddToTail( cmd );
+		auto list = s_pRoot;
+
+		if(!list || list->m_nSize >= sizeof( m_Entries ) / sizeof( m_Entries[0] ))
+		{
+			list = new ConCommandRegList;
+			list->m_nSize = 0;
+			list->m_pPrev = s_pRoot;
+
+			s_pRoot = list;
+		}
+
+		list->m_Entries[list->m_nSize++] = cmd;
 	}
 
-	CUtlVector<ConCommandCreation_t> m_Vec;
+private:
+	int m_nSize;
+	ConCommandCreationEntry_t m_Entries[100];
+	ConCommandRegList *m_pPrev;
+
 public:
 	static bool s_bConCommandsRegistered;
+	static ConCommandRegList *s_pRoot;
 };
-bool ConCommandRegList::s_bConCommandsRegistered = false;
 
-void AddCommand( ConCommandCreation_t& cmd )
+bool ConCommandRegList::s_bConCommandsRegistered = false;
+ConCommandRegList *ConCommandRegList::s_pRoot = nullptr;
+
+void SetupConCommand( ConCommand *cmd, const ConCommandCreation_t& info )
 {
+	ConCommandRegList::ConCommandCreationEntry_t entry;
+	entry.m_Info = info;
+	entry.m_Command = cmd;
+
 	if (ConCommandRegList::s_bConCommandsRegistered && s_bRegistered)
 	{
-		RegisterCommand( cmd );
+		ConCommandRegList::RegisterCommand( entry );
 		return;
 	}
 
-	ConCommandRegList::GetRegList()->Add( cmd );
+	ConCommandRegList::AddToList( entry );
+}
+
+void UnRegisterCommand( ConCommand *cmd )
+{
+	if(cmd->IsValid())
+	{
+		g_pCVar->UnregisterConCommand( *cmd );
+
+		cmd->Invalidate();
+	}
 }
 
 void RegisterConVar( ConVarCreation_t& cvar )
@@ -363,77 +391,14 @@ int CCommand::FindArgInt( const char *pName, int nDefaultVal ) const
 		return nDefaultVal;
 }
 
-
-//-----------------------------------------------------------------------------
-// Default console command autocompletion function 
-//-----------------------------------------------------------------------------
-int DefaultCompletionFunc( const CCommand &command, CUtlVector< CUtlString > &completions )
+ConCommandRef::ConCommandRef( const char *command, bool allow_developer )
 {
-	return 0;
+	*this = g_pCVar->FindCommand( command, allow_developer );
 }
 
-ConCommand::ConCommand( const char *pName, FnCommandCallback_t callback, const char *pHelpString /*= 0*/, int64 flags /*= 0*/, FnCommandCompletionCallback completionFunc /*= 0*/ )
+ConCommandData *ConCommandRef::GetRawData()
 {
-	ConCommandCreation_t creation;
-	creation.m_fnCallback.m_fnCommandCallback = callback;
-	creation.m_fnCallback.m_bIsInterface = false;
-	creation.m_fnCallback.m_bIsVoidCallback = false;
-	creation.m_fnCallback.m_bIsContextLess = false;
-
-	creation.m_fnCompletionCallback = completionFunc ? completionFunc : DefaultCompletionFunc;
-	creation.m_bHasCompletionCallback = completionFunc != 0 ? true : false;
-	creation.m_bIsInterface = false;
-
-	// Setup the rest
-	Create( pName, pHelpString, flags, creation );
-}
-
-ConCommand::ConCommand( const char *pName, FnCommandCallbackVoid_t callback, const char *pHelpString /*= 0*/, int64 flags /*= 0*/, FnCommandCompletionCallback completionFunc /*= 0*/ )
-{
-	ConCommandCreation_t creation;
-	creation.m_fnCallback.m_fnVoidCommandCallback = callback;
-	creation.m_fnCallback.m_bIsInterface = false;
-	creation.m_fnCallback.m_bIsVoidCallback = true;
-	creation.m_fnCallback.m_bIsContextLess = false;
-
-	creation.m_fnCompletionCallback = completionFunc ? completionFunc : DefaultCompletionFunc;
-	creation.m_bHasCompletionCallback = completionFunc != nullptr ? true : false;
-	creation.m_bIsInterface = false;
-
-	// Setup the rest
-	Create( pName, pHelpString, flags, creation );
-}
-
-ConCommand::ConCommand( const char *pName, FnCommandCallbackNoContext_t callback, const char *pHelpString /*= 0*/, int64 flags /*= 0*/, FnCommandCompletionCallback completionFunc /*= 0*/ )
-{
-	ConCommandCreation_t creation;
-	creation.m_fnCallback.m_fnContextlessCommandCallback = callback;
-	creation.m_fnCallback.m_bIsInterface = false;
-	creation.m_fnCallback.m_bIsVoidCallback = false;
-	creation.m_fnCallback.m_bIsContextLess = true;
-
-	creation.m_fnCompletionCallback = completionFunc ? completionFunc : DefaultCompletionFunc;
-	creation.m_bHasCompletionCallback = completionFunc != nullptr ? true : false;
-	creation.m_bIsInterface = false;
-
-	// Setup the rest
-	Create( pName, pHelpString, flags, creation );
-}
-
-ConCommand::ConCommand( const char *pName, ICommandCallback *pCallback, const char *pHelpString /*= 0*/, int64 flags /*= 0*/, ICommandCompletionCallback *pCompletionCallback /*= 0*/ )
-{
-	ConCommandCreation_t creation;
-	creation.m_fnCallback.m_pCommandCallback = pCallback;
-	creation.m_fnCallback.m_bIsInterface = true;
-	creation.m_fnCallback.m_bIsVoidCallback = false;
-	creation.m_fnCallback.m_bIsContextLess = false;
-
-	creation.m_pCommandCompletionCallback = pCompletionCallback;
-	creation.m_bHasCompletionCallback = pCompletionCallback != nullptr ? true : false;
-	creation.m_bIsInterface = true;
-
-	// Setup the rest
-	Create( pName, pHelpString, flags, creation );
+	return g_pCVar->GetCommand( *this );
 }
 
 //-----------------------------------------------------------------------------
@@ -443,28 +408,45 @@ ConCommand::ConCommand( const char *pName, ICommandCallback *pCallback, const ch
 //			*pHelpString - 
 //			flags - 
 //-----------------------------------------------------------------------------
-void ConCommand::Create( const char* pName, const char* pHelpString, int64_t flags, ConCommandCreation_t& setup )
+void ConCommand::Create( const char* pName, const ConCommandCallbackInfo_t &cb, const char* pHelpString, int64_t flags, const ConCommandCompletionCallbackInfo_t &completion_cb )
 {
-	static const char* empty_string = "";
-
 	// Name should be static data
 	Assert(pName);
-	setup.m_pszName = pName;
-	setup.m_pszHelpString = pHelpString ? pHelpString : empty_string;
+	Assert(pHelpString);
 
-	setup.m_nFlags = flags;
+	ConCommandCreation_t info;
+	info.m_pszName = pName;
+	info.m_pszHelpString = pHelpString;
 
-#ifdef ALLOW_DEVELOPMENT_CVARS
-	setup.m_nFlags &= ~FCVAR_DEVELOPMENTONLY;
+#ifdef SANITIZE_CVAR_FLAGS
+	if(!CommandLine()->HasParm( "-tools" )
+		&& (flags & (FCVAR_CLIENTDLL
+					| FCVAR_HIDDEN
+					| FCVAR_USERINFO
+					| FCVAR_MISSING0
+					| FCVAR_PER_USER
+					| FCVAR_MENUBAR_ITEM
+					| FCVAR_MISSING3
+					| FCVAR_SERVER_CAN_EXECUTE
+					| FCVAR_VCONSOLE_SET_FOCUS
+					| FCVAR_CLIENTCMD_CAN_EXECUTE
+					| FCVAR_DEFENSIVE
+					| FCVAR_MISSING4)) == 0)
+	{
+		flags |= FCVAR_DEFENSIVE | FCVAR_DEVELOPMENTONLY;
+	}
 #endif
-	setup.m_pHandle = &this->m_Handle;
 
-	AddCommand( setup );
+	info.m_nFlags = flags;
+	info.m_CBInfo = cb;
+	info.m_CompletionCBInfo = completion_cb;
+
+	SetupConCommand( this, info );
 }
 
 void ConCommand::Destroy()
 {
-	UnRegisterCommand(this->m_Handle);
+	UnRegisterCommand( this );
 }
 
 //-----------------------------------------------------------------------------
