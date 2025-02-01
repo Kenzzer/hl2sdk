@@ -408,7 +408,7 @@ public:
 	ConCommandCompletionCallbackInfo_t m_CompletionCB;
 
 	// Register index of concommand which completion cb comes from
-	int m_ComplitionCBCmdIndex;
+	int m_CompletionCBCmdIndex;
 	// Index in a linkedlist of callbackinfos
 	uint16 m_CallbackInfoIndex;
 };
@@ -438,6 +438,7 @@ public:
 	bool HasCompletionCallback() const { return GetRawData()->HasCompletionCallback(); }
 	bool HasCallback() const { return GetRawData()->HasCallback(); }
 
+	int GetCompletionCommandIndex() const { return GetRawData()->m_CompletionCBCmdIndex; }
 	uint16_t GetCallbackIndex() const { return GetRawData()->m_CallbackInfoIndex; }
 
 	int GetAutoCompleteSuggestions( const CCommand &command, CUtlVector< CUtlString > &completions ) const
@@ -463,7 +464,8 @@ public:
 	ConCommand( uint16_t access_idx, int reg_idx ) : ConCommandRef( access_idx ), m_CommandRegisteredIndex( reg_idx ) {}
 
 	ConCommand( const char *pName, ConCommandCallbackInfo_t callback,
-		const char *pHelpString = 0, int64 flags = 0, ConCommandCompletionCallbackInfo_t completionFunc = ConCommandCompletionCallbackInfo_t() )
+		const char *pHelpString, int64 flags = 0,
+		ConCommandCompletionCallbackInfo_t completionFunc = ConCommandCompletionCallbackInfo_t() )
 		: ConCommandRef(), m_CommandRegisteredIndex( 0 )
 	{
 		Create( pName, callback, pHelpString, flags, completionFunc );
