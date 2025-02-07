@@ -17,7 +17,6 @@
 #include "tier1/utlvector.h"
 #include "tier1/utlbuffer.h"
 #include "tier1/tier1.h"
-#include "tier1/convar_serverbounded.h"
 #include "icvar.h"
 #include "tier0/dbg.h"
 #include "Color.h"
