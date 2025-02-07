@@ -33,22 +33,22 @@
 // Statically constructed list of ConCommandBases, 
 // used for registering them with the ICVar interface
 //-----------------------------------------------------------------------------
-static int64 s_nCVarFlag = 0;
+static uint64 s_nCVarFlag = 0;
 static bool s_bRegistered = false;
 
 class ConCommandRegList
 {
 public:
-	struct ConCommandCreationEntry_t
+	struct Entry_t
 	{
 		ConCommandCreation_t m_Info;
 		ConCommand *m_Command = nullptr;
 	};
 
-	static void RegisterCommand( ConCommandCreationEntry_t &cmd )
+	static void RegisterConCommand( const Entry_t &cmd )
 	{
 		*cmd.m_Command = g_pCVar->RegisterConCommand( cmd.m_Info, s_nCVarFlag );
-		if(!cmd.m_Command->IsValid())
+		if(!cmd.m_Command->IsValidRef())
 		{
 			Plat_FatalErrorFunc( "RegisterConCommand: Unknown error registering con command \"%s\"!\n", cmd.m_Info.m_pszName );
 			DebuggerBreakIfDebugging();
@@ -66,7 +66,7 @@ public:
 			{
 				for(int i = 0; i < list->m_nSize; i++)
 				{
-					RegisterCommand( list->m_Entries[i] );
+					RegisterConCommand( list->m_Entries[i] );
 				}
 
 				prev = list->m_pPrev;
@@ -75,8 +75,14 @@ public:
 		}
 	}
 
-	static void AddToList( const ConCommandCreationEntry_t &cmd )
+	static void AddToList( const Entry_t &cmd )
 	{
+		if(s_bConCommandsRegistered)
+		{
+			RegisterConCommand( cmd );
+			return;
+		}
+
 		auto list = s_pRoot;
 
 		if(!list || list->m_nSize >= sizeof( m_Entries ) / sizeof( m_Entries[0] ))
@@ -93,7 +99,7 @@ public:
 
 private:
 	int m_nSize;
-	ConCommandCreationEntry_t m_Entries[100];
+	Entry_t m_Entries[100];
 	ConCommandRegList *m_pPrev;
 
 public:
@@ -106,103 +112,144 @@ ConCommandRegList *ConCommandRegList::s_pRoot = nullptr;
 
 void SetupConCommand( ConCommand *cmd, const ConCommandCreation_t& info )
 {
-	ConCommandRegList::ConCommandCreationEntry_t entry;
+	ConCommandRegList::Entry_t entry;
 	entry.m_Info = info;
 	entry.m_Command = cmd;
-
-	if (ConCommandRegList::s_bConCommandsRegistered && s_bRegistered)
-	{
-		ConCommandRegList::RegisterCommand( entry );
-		return;
-	}
 
 	ConCommandRegList::AddToList( entry );
 }
 
-void UnRegisterCommand( ConCommand *cmd )
+void UnRegisterConCommand( ConCommand *cmd )
 {
-	if(cmd->IsValid())
+	if(cmd->IsValidRef())
 	{
-		g_pCVar->UnregisterConCommand( *cmd );
+		if(g_pCVar)
+			g_pCVar->UnregisterConCommandCallbacks( *cmd );
 
-		cmd->Invalidate();
-	}
-}
-
-void RegisterConVar( ConVarCreation_t& cvar )
-{
-	g_pCVar->RegisterConVar( cvar, s_nCVarFlag, cvar.m_pHandle, cvar.m_pConVarData );
-	if (!cvar.m_pHandle->IsValid())
-	{
-		Plat_FatalErrorFunc( "RegisterConVar: Unknown error registering convar \"%s\"!\n", cvar.m_pszName );
-		DebuggerBreakIfDebugging();
-	}
-}
-
-void UnRegisterConVar( ConVarHandle& cvar )
-{
-	if (cvar.IsValid())
-	{
-		g_pCVar->UnregisterConVar( cvar );
-
-		cvar.Invalidate();
+		cmd->InvalidateRef();
 	}
 }
 
 class ConVarRegList
 {
 public:
-	static ConVarRegList* GetRegList()
+	struct Entry_t
 	{
-		static ConVarRegList* list = new ConVarRegList();
-		return list;
+		ConVarCreation_t m_Info;
+
+		ConVarRef *m_pConVar = nullptr;
+		ConVarData **m_pConVarData = nullptr;
+	};
+
+	static void RegisterConVar( const Entry_t &cvar )
+	{
+		g_pCVar->RegisterConVar( cvar.m_Info, s_nCVarFlag, cvar.m_pConVar, cvar.m_pConVarData );
+		if(!cvar.m_pConVar->IsValidRef())
+		{
+			Plat_FatalErrorFunc( "RegisterConVar: Unknown error registering convar \"%s\"!\n", cvar.m_Info.m_pszName );
+			DebuggerBreakIfDebugging();
+		}
 	}
 
 	static void RegisterAll()
 	{
-		if ( !s_bConVarsRegistered && g_pCVar )
+		if(!s_bConVarsRegistered && g_pCVar)
 		{
 			s_bConVarsRegistered = true;
 
-			ConVarRegList* list = GetRegList();
-			FOR_EACH_VEC( list->m_Vec, i )
+			ConVarRegList *prev = nullptr;
+			for(auto list = s_pRoot; list; list = prev)
 			{
-				RegisterConVar( list->m_Vec[i] );
-			}
-			delete list;
+				for(int i = 0; i < list->m_nSize; i++)
+				{
+					RegisterConVar( list->m_Entries[i] );
+				}
+
+				prev = list->m_pPrev;
+				delete list;
+			};
 		}
 	}
 
-private:
-	friend void SetupConVar( ConVarCreation_t& cvar );
-
-	void Add( const ConVarCreation_t& cvar )
+	static void AddToList( const Entry_t &cvar )
 	{
-		m_Vec.AddToTail( cvar );
+		if(s_bConVarsRegistered)
+		{
+			RegisterConVar( cvar );
+			return;
+		}
+
+		auto list = s_pRoot;
+
+		if(!list || list->m_nSize >= sizeof( m_Entries ) / sizeof( m_Entries[0] ))
+		{
+			list = new ConVarRegList;
+			list->m_nSize = 0;
+			list->m_pPrev = s_pRoot;
+
+			s_pRoot = list;
+		}
+
+		list->m_Entries[list->m_nSize++] = cvar;
 	}
 
-	CUtlVector<ConVarCreation_t> m_Vec;
+private:
+	int m_nSize;
+	Entry_t m_Entries[100];
+	ConVarRegList *m_pPrev;
+
 public:
 	static bool s_bConVarsRegistered;
+	static ConVarRegList *s_pRoot;
 };
 
 bool ConVarRegList::s_bConVarsRegistered = false;
+ConVarRegList *ConVarRegList::s_pRoot = nullptr;
 
-void SetupConVar( ConVarCreation_t& cvar )
+void SetupConVar( ConVarRef *cvar, ConVarData **cvar_data, ConVarCreation_t &info )
 {
-	if ( ConVarRegList::s_bConVarsRegistered )
+	ConVarRegList::Entry_t entry;
+	entry.m_Info = info;
+	entry.m_pConVar = cvar;
+	entry.m_pConVarData = cvar_data;
+
+	ConVarRegList::AddToList( entry );
+}
+
+void UnRegisterConVar( ConVarRef *cvar )
+{
+	if(cvar->IsValidRef())
 	{
-		RegisterConVar(cvar);
-		return;
+		if(g_pCVar)
+			g_pCVar->UnregisterConVarCallbacks( *cvar );
+
+		cvar->InvalidateRef();
 	}
-	
-	ConVarRegList::GetRegList()->Add( cvar );
+}
+
+uint64 SanitiseConVarFlags( uint64 flags )
+{
+#ifdef SANITIZE_CVAR_FLAGS
+	if(!CommandLine()->HasParm( "-tools" )
+		&& (flags & (FCVAR_DEVELOPMENTONLY
+					| FCVAR_ARCHIVE
+					| FCVAR_USERINFO
+					| FCVAR_CHEAT
+					| FCVAR_RELEASE
+					| FCVAR_SERVER_CAN_EXECUTE
+					| FCVAR_CLIENT_CAN_EXECUTE
+					| FCVAR_CLIENTCMD_CAN_EXECUTE)) == 0)
+	{
+		flags |= FCVAR_DEFENSIVE | FCVAR_DEVELOPMENTONLY;
+	}
+#endif
+	return flags;
 }
 
 //-----------------------------------------------------------------------------
 // Called by the framework to register ConCommandBases with the ICVar
 //-----------------------------------------------------------------------------
-void ConVar_Register( int64 nCVarFlag )
+void ConVar_Register( uint64 nCVarFlag )
 {
 	if ( !g_pCVar || s_bRegistered )
 	{
@@ -391,53 +438,30 @@ int CCommand::FindArgInt( const char *pName, int nDefaultVal ) const
 		return nDefaultVal;
 }
 
-ConCommandRef::ConCommandRef( const char *command, bool allow_developer )
+ConCommandRef::ConCommandRef( const char *name, bool allow_developer )
 {
-	*this = g_pCVar->FindCommand( command, allow_developer );
+	*this = g_pCVar->FindConCommand( name, allow_developer );
 }
 
 ConCommandData *ConCommandRef::GetRawData()
 {
-	return g_pCVar->GetCommand( *this );
+	return g_pCVar->GetConCommandData( *this );
 }
 
-//-----------------------------------------------------------------------------
-// Purpose: 
-// Input  : *pName - 
-//			callback - 
-//			*pHelpString - 
-//			flags - 
-//-----------------------------------------------------------------------------
-void ConCommand::Create( const char* pName, const ConCommandCallbackInfo_t &cb, const char* pHelpString, int64_t flags, const ConCommandCompletionCallbackInfo_t &completion_cb )
+void ConCommandRef::Dispatch( const CCommandContext &context, const CCommand &command )
+{
+	g_pCVar->DispatchConCommand( *this, context, command );
+}
+
+void ConCommand::Create( const char* pName, const ConCommandCallbackInfo_t &cb, const char* pHelpString, uint64 flags, const ConCommandCompletionCallbackInfo_t &completion_cb )
 {
 	// Name should be static data
 	Assert(pName);
-	Assert(pHelpString);
 
 	ConCommandCreation_t info;
 	info.m_pszName = pName;
 	info.m_pszHelpString = pHelpString;
-
-#ifdef SANITIZE_CVAR_FLAGS
-	if(!CommandLine()->HasParm( "-tools" )
-		&& (flags & (FCVAR_CLIENTDLL
-					| FCVAR_HIDDEN
-					| FCVAR_USERINFO
-					| FCVAR_MISSING0
-					| FCVAR_PER_USER
-					| FCVAR_MENUBAR_ITEM
-					| FCVAR_MISSING3
-					| FCVAR_SERVER_CAN_EXECUTE
-					| FCVAR_VCONSOLE_SET_FOCUS
-					| FCVAR_CLIENTCMD_CAN_EXECUTE
-					| FCVAR_DEFENSIVE
-					| FCVAR_MISSING4)) == 0)
-	{
-		flags |= FCVAR_DEFENSIVE | FCVAR_DEVELOPMENTONLY;
-	}
-#endif
-
-	info.m_nFlags = flags;
+	info.m_nFlags = SanitiseConVarFlags( flags );
 	info.m_CBInfo = cb;
 	info.m_CompletionCBInfo = completion_cb;
 
@@ -446,7 +470,7 @@ void ConCommand::Create( const char* pName, const ConCommandCallbackInfo_t &cb, 
 
 void ConCommand::Destroy()
 {
-	UnRegisterCommand( this );
+	UnRegisterConCommand( this );
 }
 
 //-----------------------------------------------------------------------------
@@ -455,168 +479,227 @@ void ConCommand::Destroy()
 //
 //-----------------------------------------------------------------------------
 
-#ifdef CONVAR_WORK_FINISHED
-
-//-----------------------------------------------------------------------------
-// Purpose: 
-//-----------------------------------------------------------------------------
-void ConVar_PrintFlags( const ConCommandBase *var )
+int ConVarData::GetMaxSplitScreenSlots() const
 {
-	bool any = false;
-	if ( var->IsFlagSet( FCVAR_GAMEDLL ) )
-	{
-		ConMsg( " game" );
-		any = true;
-	}
+	if((m_nFlags & FCVAR_PER_USER) != 0)
+		return g_pCVar->GetMaxSplitScreenSlots();
 
-	if ( var->IsFlagSet( FCVAR_CLIENTDLL ) )
-	{
-		ConMsg( " client" );
-		any = true;
-	}
-
-	if ( var->IsFlagSet( FCVAR_ARCHIVE ) )
-	{
-		ConMsg( " archive" );
-		any = true;
-	}
-
-	if ( var->IsFlagSet( FCVAR_NOTIFY ) )
-	{
-		ConMsg( " notify" );
-		any = true;
-	}
-
-	if ( var->IsFlagSet( FCVAR_SPONLY ) )
-	{
-		ConMsg( " singleplayer" );
-		any = true;
-	}
-
-	if ( var->IsFlagSet( FCVAR_NOT_CONNECTED ) )
-	{
-		ConMsg( " notconnected" );
-		any = true;
-	}
-
-	if ( var->IsFlagSet( FCVAR_CHEAT ) )
-	{
-		ConMsg( " cheat" );
-		any = true;
-	}
-
-	if ( var->IsFlagSet( FCVAR_REPLICATED ) )
-	{
-		ConMsg( " replicated" );
-		any = true;
-	}
-
-	if ( var->IsFlagSet( FCVAR_SERVER_CAN_EXECUTE ) )
-	{
-		ConMsg( " server_can_execute" );
-		any = true;
-	}
-
-	if ( var->IsFlagSet( FCVAR_CLIENTCMD_CAN_EXECUTE ) )
-	{
-		ConMsg( " clientcmd_can_execute" );
-		any = true;
-	}
-
-	if ( any )
-	{
-		ConMsg( "\n" );
-	}
+	return 1;
 }
 
-
-//-----------------------------------------------------------------------------
-// Purpose: 
-//-----------------------------------------------------------------------------
-void ConVar_PrintDescription( const ConCommandBase *pVar )
+CVValue_t *ConVarData::Value( CSplitScreenSlot slot ) const
 {
-	bool bMin, bMax;
-	float fMin, fMax;
-	const char *pStr;
+	if(slot.Get() == -1)
+		slot = CSplitScreenSlot( 0 );
 
-	Assert( pVar );
+	if(!IsSlotInRange( slot ))
+		return nullptr;
 
-	Color clr;
-	clr.SetColor( 255, 100, 100, 255 );
+	return (CVValue_t *)&m_Values[GetDataByteSize() * slot.Get()];
+}
 
-	if ( !pVar->IsCommand() )
+CVValue_t *ConVarData::ValueOrDefault( CSplitScreenSlot slot ) const
+{
+	CVValue_t *value = Value( slot );
+	return value ? value : m_defaultValue;
+}
+
+bool ConVarData::IsAllSetToDefault() const
+{
+	for(int i = 0; i < GetMaxSplitScreenSlots(); i++)
 	{
-		ConVar *var = ( ConVar * )pVar;
-		const ConVar_ServerBounded *pBounded = dynamic_cast<const ConVar_ServerBounded*>( var );
-
-		bMin = var->GetMin( fMin );
-		bMax = var->GetMax( fMax );
-
-		const char *value = NULL;
-		char tempVal[ 32 ];
-
-		if ( pBounded || var->IsFlagSet( FCVAR_NEVER_AS_STRING ) )
-		{
-			value = tempVal;
-			
-			int intVal = pBounded ? pBounded->GetInt() : var->GetInt();
-			float floatVal = pBounded ? pBounded->GetFloat() : var->GetFloat();
-
-			if ( fabs( (float)intVal - floatVal ) < 0.000001 )
-			{
-				Q_snprintf( tempVal, sizeof( tempVal ), "%d", intVal );
-			}
-			else
-			{
-				Q_snprintf( tempVal, sizeof( tempVal ), "%f", floatVal );
-			}
-		}
-		else
-		{
-			value = var->GetString();
-		}
-
-		if ( value )
-		{
-			ConColorMsg( clr, "\"%s\" = \"%s\"", var->GetName(), value );
-
-			if ( stricmp( value, var->GetDefault() ) )
-			{
-				ConMsg( " ( def. \"%s\" )", var->GetDefault() );
-			}
-		}
-
-		if ( bMin )
-		{
-			ConMsg( " min. %f", fMin );
-		}
-		if ( bMax )
-		{
-			ConMsg( " max. %f", fMax );
-		}
-
-		ConMsg( "\n" );
-
-		// Handled virtualized cvars.
-		if ( pBounded && fabs( pBounded->GetFloat() - var->GetFloat() ) > 0.0001f )
-		{
-			ConColorMsg( clr, "** NOTE: The real value is %.3f but the server has temporarily restricted it to %.3f **\n",
-				var->GetFloat(), pBounded->GetFloat() );
-		}
+		if(!IsSetToDefault( i ))
+			return false;
 	}
+
+	return true;
+}
+
+void ConVarData::MinValueToString( CBufferString &buf ) const
+{
+	if(HasMinValue())
+		TypeTraits()->ValueToString( m_minValue, buf );
 	else
-	{
-		ConCommand *var = ( ConCommand * )pVar;
-
-		ConColorMsg( clr, "\"%s\"\n", var->GetName() );
-	}
-
-	ConVar_PrintFlags( pVar );
-
-	pStr = pVar->GetHelpText();
-	if ( pStr && pStr[0] )
-	{
-		ConMsg( " - %s\n", pStr );
-	}
+		buf.Insert( 0, "" );
 }
-#endif // CONVAR_WORK_FINISHED
+
+void ConVarData::MaxValueToString( CBufferString &buf ) const
+{
+	if(HasMaxValue())
+		TypeTraits()->ValueToString( m_maxValue, buf );
+	else
+		buf.Insert( 0, "" );
+}
+
+ConVarRef::ConVarRef( const char *name, bool allow_developer )
+{
+	*this = g_pCVar->FindConVar( name, allow_developer );
+}
+
+void ConVarRefAbstract::Init( ConVarRef ref, EConVarType type )
+{
+	m_ConVarData = nullptr;
+
+	if(g_pCVar)
+		m_ConVarData = g_pCVar->GetConVarData( ref );
+	
+	if(!m_ConVarData)
+		InvalidateConVarData( type );
+}
+
+void ConVarRefAbstract::InvalidateConVarData( EConVarType type )
+{
+	if(type == EConVarType_Invalid)
+		m_ConVarData = GetInvalidConVarData( EConVarType_Invalid );
+	else
+		m_ConVarData = GetCvarTypeTraits( type )->m_InvalidCvarData;
+}
+
+void ConVarRefAbstract::CallChangeCallbacks( CSplitScreenSlot slot, CVValue_t *new_value, CVValue_t *prev_value, const char *new_str, const char *prev_str )
+{
+	if(slot.Get() == -1)
+		slot = CSplitScreenSlot( 0 );
+
+	g_pCVar->CallChangeCallback( *this, slot, new_value, prev_value );
+	g_pCVar->CallGlobalChangeCallbacks( this, slot, new_str, prev_str );
+}
+
+void ConVarRefAbstract::SetOrQueueValueInternal( CSplitScreenSlot slot, CVValue_t *value )
+{
+	if(m_ConVarData->IsFlagSet( FCVAR_PERFORMING_CALLBACKS ))
+		QueueSetValueInternal( slot, value );
+	else
+		SetValueInternal( slot, value );
+}
+
+void ConVarRefAbstract::QueueSetValueInternal( CSplitScreenSlot slot, CVValue_t *value )
+{
+	if(slot.Get() == -1)
+		slot = CSplitScreenSlot( 0 );
+
+	TypeTraits()->Clamp( value, m_ConVarData->MinValue(), m_ConVarData->MaxValue() );
+
+	if(!m_ConVarData->IsEqual( slot, value ))
+		g_pCVar->QueueThreadSetValue( this, slot, value );
+}
+
+void ConVarRefAbstract::SetValueInternal( CSplitScreenSlot slot, CVValue_t *value )
+{
+	CVValue_t *curr_value = m_ConVarData->ValueOrDefault( slot );
+
+	CVValue_t prev;
+	TypeTraits()->Construct( &prev );
+
+	TypeTraits()->Copy( &prev, *curr_value );
+	TypeTraits()->Destruct( curr_value );
+
+	TypeTraits()->Copy( curr_value, *value );
+	m_ConVarData->Clamp( slot );
+
+	if(!m_ConVarData->IsEqual( slot, &prev ))
+	{
+		CBufferString prev_str, new_str;
+
+		TypeTraits()->ValueToString( &prev, prev_str );
+		TypeTraits()->ValueToString( curr_value, new_str );
+
+		m_ConVarData->IncrementTimesChanged();
+
+		CallChangeCallbacks( slot, curr_value, &prev, new_str.Get(), prev_str.Get() );
+	}
+
+	TypeTraits()->Destruct( &prev );
+}
+
+bool ConVarRefAbstract::SetString( CUtlString string, CSplitScreenSlot slot )
+{
+	CVValue_t *value = m_ConVarData->Value( slot );
+
+	if(!value)
+		return true;
+	
+	if(GetType() != EConVarType_String)
+		string.Trim( "\t\n\v\f\r " );
+
+	CVValue_t new_value;
+	TypeTraits()->Construct( &new_value );
+
+	bool success = false;
+	if(TypeTraits()->StringToValue( string.Get(), &new_value ))
+	{
+		SetOrQueueValueInternal( slot, &new_value );
+		success = true;
+	}
+
+	TypeTraits()->Destruct( &new_value );
+	return success;
+}
+
+void ConVarRefAbstract::Revert( CSplitScreenSlot slot )
+{
+	CBufferString buf;
+	GetDefaultAsString( buf );
+	SetString( buf.Get(), slot );
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: 
+//-----------------------------------------------------------------------------
+void ConVar_PrintDescription( const ConVarRefAbstract *ref )
+{
+	Assert( ref );
+
+	static struct
+	{
+		uint64 m_Flag;
+		const char *m_Name;
+	} s_FlagsMap[] = {
+		{ FCVAR_GAMEDLL, "game" },
+		{ FCVAR_CLIENTDLL, "client" },
+		{ FCVAR_ARCHIVE, "archive" },
+		{ FCVAR_NOTIFY, "notify" },
+		{ FCVAR_SPONLY, "singleplayer" },
+		{ FCVAR_NOT_CONNECTED, "notconnected" },
+		{ FCVAR_CHEAT, "cheat" },
+		{ FCVAR_REPLICATED, "replicated" },
+		{ FCVAR_SERVER_CAN_EXECUTE, "server_can_execute" },
+		{ FCVAR_CLIENTCMD_CAN_EXECUTE, "clientcmd_can_execute" },
+		{ FCVAR_USERINFO, "userinfo" },
+		{ FCVAR_PER_USER, "per_user" }
+	};
+
+	CBufferStringN<4096> desc;
+	CBufferString buf;
+
+	ref->GetValueAsString( buf );
+	desc.AppendFormat( "\"%s\" = \"%s\"", ref->GetName(), buf.Get() );
+
+	if(!ref->IsSetToDefault())
+	{
+		ref->GetDefaultAsString( buf );
+		desc.AppendFormat( " ( def. \"%s\" )", buf.Get() );
+	}
+
+	if(ref->HasMin())
+	{
+		ref->GetMinAsString( buf );
+		desc.AppendFormat( " min. %s", buf.Get() );
+	}
+
+	if(ref->HasMax())
+	{
+		ref->GetMaxAsString( buf );
+		desc.AppendFormat( " max. %s", buf.Get() );
+	}
+
+	for(int i = 0; i < sizeof( s_FlagsMap ) / sizeof( s_FlagsMap[0] ); i++)
+	{
+		if(ref->IsFlagSet( s_FlagsMap[i].m_Flag ))
+			desc.AppendFormat( " %s", s_FlagsMap[i].m_Name );
+	}
+
+	if(ref->HasHelpString())
+		ConMsg( "%-120s - %s\n", desc.Get(), ref->GetHelpString() );
+	else
+		ConMsg( "%-120s\n", desc.Get() );
+}
