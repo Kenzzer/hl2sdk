@@ -13,6 +13,8 @@
 #include "appframework/IAppSystem.h"
 #include "tier1/utlvector.h"
 #include "tier1/characterset.h"
+#include "utllinkedlist.h"
+#include "utlhashtable.h"
 #include "tier0/memalloc.h"
 #include "convar.h"
 #include <cstdint>
@@ -129,6 +131,127 @@ public:
 	// Queues up value (creates a copy of it) to be set when convar is ready to be edited
 	virtual void				QueueThreadSetValue( ConVarRefAbstract* ref, CSplitScreenSlot nSlot, CVValue_t* value ) = 0;
 };
+
+#include "memdbgon.h"
+
+// AMNOTE: CCvar definition is mostly for reference and is reverse engineered
+// You shouldn't be using this to directly register cvars/concommands, use its interface instead when possible
+class CCvar : public ICvar
+{
+public:
+	static const int kMemoryBufferChunkMaxSize = 8192;
+	static const int kStringBufferChunkMaxSize = 2048;
+
+	// Allocates memory in its internal buffer, can't be freed
+	// (other than freeing internal buffers completely), so is leaky and thus use cautiously
+	// AMNOTE: Mostly used for allocating CVValue_t and ConVarData/ConCommandData objects
+	void *AllocateMemory( int size )
+	{
+		int aligned_size = ALIGN_VALUE( size, 8 );
+		
+		if(aligned_size + m_CurrentMemoryBufferSize > kMemoryBufferChunkMaxSize)
+		{
+			m_CurrentMemoryBufferSize = 0;
+			*m_MemoryBuffer.AddToTailGetPtr() = (uint8 *)malloc( kMemoryBufferChunkMaxSize );
+		}
+
+		int offs = m_CurrentMemoryBufferSize;
+		m_CurrentMemoryBufferSize += aligned_size;
+
+		return &m_MemoryBuffer[m_MemoryBuffer.Count() - 1][offs];
+	}
+
+	// Allocates memory in its internal string buffer, can't be freed
+	// (other than freeing internal buffers completely), so is leaky and thus use cautiously
+	// AMNOTE: Mostly used for allocating cvar/concommand names
+	const char *AllocateString( const char *string )
+	{
+		if(!string || !string[0])
+			return "";
+
+		int strlen = V_strlen( string ) + 1;
+
+		if(strlen + m_CurrentStringsBufferSize > kStringBufferChunkMaxSize)
+		{
+			m_CurrentStringsBufferSize = 0;
+			*m_StringsBuffer.AddToTailGetPtr() = (char *)malloc( kStringBufferChunkMaxSize );
+		}
+
+		int offs = m_CurrentStringsBufferSize;
+		m_CurrentStringsBufferSize += strlen;
+
+		char *base = &m_StringsBuffer[m_StringsBuffer.Count() - 1][offs];
+		V_memmove( base, string, strlen );
+
+		return base;
+	}
+
+	struct CConVarChangeCallbackNode_t
+	{
+		FnGenericChangeCallback_t m_pCallback;
+
+		// Register index of cvar which change cb comes from
+		int m_ConVarIndex;
+	};
+
+	struct ConCommandCallbackInfoNode_t
+	{
+		ConCommandCallbackInfo_t m_CB;
+
+		// Register index of concommand which completion cb comes from
+		int m_ConCmdIndex;
+		// Index in a linkedlist of callbackinfos
+		uint16 m_CallbackInfoIndex;
+	};
+
+	struct QueuedConVarSet_t
+	{
+		ConVarRefAbstract *m_ConVar;
+		CSplitScreenSlot m_Slot;
+		CVValue_t *m_Value;
+	};
+
+	CUtlVector<char *> m_StringsBuffer;
+	CUtlVector<uint8 *> m_MemoryBuffer;
+	int m_CurrentStringsBufferSize;
+	int m_CurrentMemoryBufferSize;
+
+	CUtlLinkedList<ConVarData *> m_ConVarList;
+	CUtlHashtable<CUtlStringToken, uint16> m_ConVarHashes;
+	CUtlLinkedList<CConVarChangeCallbackNode_t> m_ConVarChangeCBList;
+	int m_ConVarCount;
+
+	CUtlVector<ICVarListenerCallbacks *> m_CvarCreationListeners;
+	CUtlVector<FnChangeCallbackGlobal_t> m_GlobalChangeCBList;
+
+	CUtlLinkedList<ConCommandData> m_ConCommandList;
+	CUtlHashtable<CUtlStringToken, uint16> m_ConCommandHashes;
+	CUtlLinkedList<ConCommandCallbackInfoNode_t, unsigned short, true> m_CallbackInfoList;
+	int m_ConCommandCount;
+
+	int m_SplitScreenSlots;
+
+	CThreadMutex m_Mutex;
+	characterset_t m_CharacterSet;
+	KeyValues *m_GameInfoKV;
+
+	uint8 m_CvarDefaultValues[EConVarType_MAX][128];
+
+	CUtlVector<QueuedConVarSet_t> m_SetValueQueue;
+
+	CConCommandMemberAccessor<CCvar> m_FindCmd;
+	CConCommandMemberAccessor<CCvar> m_DumpChannelsCmd;
+	CConCommandMemberAccessor<CCvar> m_LogLevelCmd;
+	CConCommandMemberAccessor<CCvar> m_LogVerbosityCmd;
+	CConCommandMemberAccessor<CCvar> m_LogColorCmd;
+	CConCommandMemberAccessor<CCvar> m_LogFlagsCmd;
+	CConCommandMemberAccessor<CCvar> m_DifferencesCmd;
+	CConCommandMemberAccessor<CCvar> m_CvarListCmd;
+	CConCommandMemberAccessor<CCvar> m_HelpCmd;
+	CConCommandMemberAccessor<CCvar> m_FindFlagsCmd;
+};
+
+#include "memdbgoff.h"
 
 //-----------------------------------------------------------------------------
 // These global names are defined by tier1.h, duplicated here so you
