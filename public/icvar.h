@@ -120,7 +120,7 @@ public:
 	virtual ConVarData*			GetConVarData( ConVarRef cvar ) = 0;
 
 	// Register, unregister commands
-	virtual ConCommand			RegisterConCommand( const ConCommandCreation_t& setup, uint64 nAdditionalFlags = 0 ) = 0;
+	virtual ConCommandRef		RegisterConCommand( const ConCommandCreation_t& setup, uint64 nAdditionalFlags = 0 ) = 0;
 	// Unregisters concommand callbacks, but leaves the command in the lists,
 	// so all ConCommandRefs would still be valid as well as searching for it.
 	// Expects ref to have registered index to be set (is set on command creation)

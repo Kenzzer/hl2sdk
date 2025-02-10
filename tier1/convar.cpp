@@ -41,7 +41,7 @@ public:
 	struct Entry_t
 	{
 		ConCommandCreation_t m_Info;
-		ConCommand *m_Command = nullptr;
+		ConCommandRef *m_Command = nullptr;
 	};
 
 	static void RegisterConCommand( const Entry_t &cmd )
@@ -63,7 +63,7 @@ public:
 			ConCommandRegList *prev = nullptr;
 			for(auto list = s_pRoot; list; list = prev)
 			{
-				for(int i = 0; i < list->m_nSize; i++)
+				for(size_t i = 0; i < list->m_nSize; i++)
 				{
 					RegisterConCommand( list->m_Entries[i] );
 				}
@@ -84,7 +84,7 @@ public:
 
 		auto list = s_pRoot;
 
-		if(!list || list->m_nSize >= sizeof( m_Entries ) / sizeof( m_Entries[0] ))
+		if(!list || list->m_nSize >= (sizeof( m_Entries ) / sizeof( m_Entries[0] )))
 		{
 			list = new ConCommandRegList;
 			list->m_nSize = 0;
@@ -97,7 +97,7 @@ public:
 	}
 
 private:
-	int m_nSize;
+	uint32 m_nSize;
 	Entry_t m_Entries[100];
 	ConCommandRegList *m_pPrev;
 
@@ -159,7 +159,7 @@ public:
 			ConVarRegList *prev = nullptr;
 			for(auto list = s_pRoot; list; list = prev)
 			{
-				for(int i = 0; i < list->m_nSize; i++)
+				for(size_t i = 0; i < list->m_nSize; i++)
 				{
 					RegisterConVar( list->m_Entries[i] );
 				}
@@ -180,7 +180,7 @@ public:
 
 		auto list = s_pRoot;
 
-		if(!list || list->m_nSize >= sizeof( m_Entries ) / sizeof( m_Entries[0] ))
+		if(!list || list->m_nSize >= (sizeof( m_Entries ) / sizeof( m_Entries[0] )))
 		{
 			list = new ConVarRegList;
 			list->m_nSize = 0;
@@ -193,7 +193,7 @@ public:
 	}
 
 private:
-	int m_nSize;
+	uint32 m_nSize;
 	Entry_t m_Entries[100];
 	ConVarRegList *m_pPrev;
 
@@ -691,7 +691,7 @@ void ConVar_PrintDescription( const ConVarRefAbstract *ref )
 		desc.AppendFormat( " max. %s", buf.Get() );
 	}
 
-	for(int i = 0; i < sizeof( s_FlagsMap ) / sizeof( s_FlagsMap[0] ); i++)
+	for(size_t i = 0; i < (sizeof( s_FlagsMap ) / sizeof( s_FlagsMap[0] )); i++)
 	{
 		if(ref->IsFlagSet( s_FlagsMap[i].m_Flag ))
 			desc.AppendFormat( " %s", s_FlagsMap[i].m_Name );

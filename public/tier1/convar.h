@@ -1056,7 +1056,7 @@ public:
 	// Attempts to get value as a float, does type conversion if possible,
 	// if no such action is available for CvarType/float combo, global default value for float would be returned
 	float GetFloat( CSplitScreenSlot slot = -1 ) const { return GetAs<float>( slot ); }
-	// Attempts to get value as a int, does type conversion if possible,
+	// Attempts to get value as an int, does type conversion if possible,
 	// if no such action is available for CvarType/int combo, global default value for int would be returned
 	int GetInt( CSplitScreenSlot slot = -1 ) const { return GetAs<int>( slot ); }
 	// Parses the value to string, mostly the same to GetValueAsString
@@ -1079,7 +1079,7 @@ public:
 	// Attempts to set value as a float, does type conversion if possible,
 	// if no such action is available for CvarType/float combo, no action would be done
 	void SetFloat( float value, CSplitScreenSlot slot = -1 ) { SetAs<float>( value, slot ); }
-	// Attempts to set value as a int, does type conversion if possible,
+	// Attempts to set value as an int, does type conversion if possible,
 	// if no such action is available for CvarType/int combo, no action would be done
 	void SetInt( int value, CSplitScreenSlot slot = -1 ) { SetAs<int>( value, slot ); }
 	// Parses the string to CvarType type, returns true on success, false otherwise
@@ -1179,6 +1179,8 @@ protected:
 	{
 		Assert( name );
 
+		Init( ConVarRef(), TranslateConVarType<T>() );
+
 		ConVarCreation_t info;
 		info.m_pszName = name;
 		info.m_pszHelpString = help_string;
@@ -1200,6 +1202,10 @@ public:
 	CConVar( const char *name, uint64 flags, const char *help_string, const T &default_value, FnChangeCallback_t cb = nullptr )
 		: BaseClass()
 	{
+		Assert( name );
+
+		BaseClass::Init( ConVarRef(), TranslateConVarType<T>() );
+
 		ConVarValueInfo_t value_info( TranslateConVarType<T>() );
 		value_info.SetDefaultValue( default_value );
 		value_info.m_fnCallBack = reinterpret_cast<FnGenericChangeCallback_t>(cb);
@@ -1210,6 +1216,10 @@ public:
 	CConVar( const char *name, uint64 flags, const char *help_string, const T &default_value, bool min, const T &minValue, bool max, const T &maxValue, FnChangeCallback_t cb = nullptr )
 		: BaseClass()
 	{
+		Assert( name );
+
+		BaseClass::Init( ConVarRef(), TranslateConVarType<T>() );
+
 		ConVarValueInfo_t value_info( TranslateConVarType<T>() );
 		value_info.SetDefaultValue( default_value );
 
